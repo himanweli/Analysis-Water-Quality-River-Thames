@@ -1,0 +1,270 @@
+---
+title: "Water quality analysis of River Thames"
+author: "S/16/499"
+date: "2/28/2021"
+classoption: a4paper
+output:
+  
+  
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,comment = NA)
+```
+
+```{r libs, include = FALSE}
+library(tidyverse)
+library(lubridate)
+library(data.table)
+library(pastecs)
+library(tidyr)
+library(factoextra)
+library(NbClust)
+library(rgl)
+```
+
+# Water Quality of River Thames
+
+
+### Importing the dataset
+```{r}
+waterQualitydf<-read.csv("River_Thames_Water_Quality.csv",header = TRUE)
+```
+
+### Head of the data
+```{r}
+head(waterQualitydf)
+```
+
+### Changing the data type of last column("Dissolved boron (µg l-1)")
+```{r}
+waterQualitydf$Ammonium..mg.l.1.NH4.<-as.numeric(waterQualitydf$Ammonium..mg.l.1.NH4.)
+waterQualitydf$Dissolved.silicon..mg.l.1.Si.<-as.numeric(waterQualitydf$Dissolved.silicon..mg.l.1.Si.)
+waterQualitydf$Dissolved.fluoride..mg.l.1.<-as.numeric(waterQualitydf$Dissolved.fluoride..mg.l.1.)
+waterQualitydf$Dissolved.boron....µg.l.1.<-as.numeric(waterQualitydf$Dissolved.boron....µg.l.1.)
+waterQualitydf$Sampling.date..dd.mm.yyyy.<-as.Date(waterQualitydf$Sampling.date..dd.mm.yyyy.,format="%d/%m/%Y")
+```
+
+### Counting missing values and removing them
+```{r}
+waterQualitydf %>%
+  select(everything()) %>%  # replace to your needs
+  summarise_all(~(sum(is.na(.))))
+```
+
+Removing missing values from the data set
+```{r}
+df_valid<-na.omit(waterQualitydf)
+head(df_valid)
+```
+
+Re-check
+```{r}
+df_valid %>%
+  select(everything()) %>%  # replace to your needs
+  summarise_all(~(sum(is.na(.))))
+```
+
+Types of columns in the dataframe
+```{r}
+glimpse(df_valid)
+```
+
+### Summary of the data set
+
+```{r}
+summary(df_valid[-c(1,2,3)])
+
+options(scipen=100)
+options(digits=2)
+summary_df<-stat.desc(df_valid[-c(1,2,3)])
+
+write.csv(summary_df,"summary.csv",row.names = TRUE)
+```
+
+### Plots and diagrams drawn versus time(Month)
+
+```{r}
+
+#unique(df_valid$Site)
+
+df_newBridge<-df_valid %>%
+  select(everything()) %>%
+  filter(Site=="River Thames at Newbridge")
+#head(df_newBridge) 
+
+ggplot(df_newBridge)+geom_line(aes(x=Sampling.date..dd.mm.yyyy.,y=Water.temperature...C.),color="red2",size=1)+
+  labs(x="Sampling date",y="Water temperature",title = "River Thames at Newbridge",subtitle = "Water temperature vs Sampling date")
+                      
+ggplot(df_newBridge)+geom_line(aes(x=Sampling.date..dd.mm.yyyy.,y=Dissolved.boron....µg.l.1.),color="red2",size=1)+
+  labs(x="Sampling date",y="Dissolved Boron",title = "River Thames at Newbridge",subtitle = "Dissolved Boron vs Sampling date")
+
+ggplot(df_newBridge)+geom_line(aes(x=Sampling.date..dd.mm.yyyy.,y=Dissolved.sodium..mg.l.1.),color="red2",size=1)+
+  labs(x="Sampling date",y="Dissolved Sodium",title = "River Thames at Newbridge",subtitle = "Dissolved Sodium vs Sampling date")
+
+ggplot(df_newBridge)+geom_line(aes(x=Sampling.date..dd.mm.yyyy.,y=Dissolved.nitrate......mg.l.1.NO3.),color="red2",size=1)+
+  labs(x="Sampling date",y="Dissolved Nitrate",title = "River Thames at Newbridge",subtitle = "Dissolved Nitrate vs Sampling date")
+```
+
+```{r}
+ggplot(df_newBridge)+geom_point(aes(x=Dissolved.sodium..mg.l.1.,y=Dissolved.nitrate......mg.l.1.NO3.),color="red2",size=1)+
+  labs(x="Dissolved Sodium",y="Dissolved Nitrate",title = "River Thames at Newbridge",subtitle = "Dissolved Nitrate vs Dissolved Sodium")
+```
+
+## Manova
+MANOVA analysis was done at 5% significance level
+    H0 : Mean water properties of each month is equal
+                vs
+    H1: Mean water properties of at least 2 months are not equal
+
+Creating summary_df new data frame to do MANOVA
+```{r}
+df_manova<-df_valid %>% 
+  select(everything()) %>%
+  group_by(Site)
+
+samplingYM<-format(df_manova$Sampling.date..dd.mm.yyyy.,"%Y-%m")
+
+df_manova$samplingYM<-samplingYM
+
+df_manova= subset(df_manova, select = -c(Sampling.time..hh.mm.,Sampling.date..dd.mm.yyyy.) )
+head(df_manova)
+```
+
+Mean values when grouped by Site and Sample taken date
+
+dependent variable extraction
+```{r}
+#d.v =dependent variables
+d.v<-as.matrix(df_manova
+               [2:18])
+```
+
+***By SITE***
+```{r}
+df_groupedbySite<-aggregate(d.v~df_manova$Site,data = df_manova, function(x)round(mean(x),2))
+colnames(df_groupedbySite)[1]<-"Site"
+head(df_groupedbySite,n=10L)
+```
+***By Sample taken date***
+```{r}
+head(aggregate(d.v~df_manova$samplingYM,data = df_manova,function(x)round(mean(x),2)),n=10L)
+```
+
+### Manova Test
+```{r}
+waterqualitymodel<-manova(d.v~df_manova$samplingYM*df_manova$Site)
+
+summary(waterqualitymodel,test = "Pillai")
+summary(waterqualitymodel,test = "Wilk")
+summary(waterqualitymodel,test = "Roy")
+summary(waterqualitymodel,test = "Hotelling-Lawley")
+```
+
+Manova second method
+```{r}
+# dv2<-as.matrix(df_manova[2:18])
+# dim(dv2)
+# output = lm(dv2~samplingYM*Site, data=df_manova,contrasts = list(samplingYM=contr.sum,Site=contr.sum))
+# 
+# manova_out<-Manova(output,type="II")
+# 
+# summary(output,multivariate=TRUE)
+```
+
+
+## Clustering
+
+### Estimating the optimal number of clusters
+
+Creating summary_df new data frame for clustering
+```{r}
+df_forClustering<-aggregate(d.v~df_manova$Site,data = df_manova, function(x)round(mean(x),2))[,-1]
+rownames(df_forClustering)<-aggregate(d.v~df_manova$Site,data = df_manova, function(x)round(mean(x),2))[,1]
+
+head(df_forClustering)
+```
+
+Scaling data frame (standardizing the data to make variables comparable)
+```{r}
+df_scaled<-scale(df_forClustering)
+```
+
+Determining the optimal number of clusters for k-means clustering by ***Elbow method***
+```{r}
+fviz_nbclust(df_scaled, kmeans, method = "wss") +
+    geom_vline(xintercept = 3, linetype = 2)+
+  labs(subtitle = "Elbow method")
+```
+
+Therefore we select k=3 as the number of clusters
+
+### Clustering using K-means
+```{r}
+set.seed(123)
+
+km.res <- kmeans(df_scaled, 3,nstart = 25)
+```
+
+Details
+```{r}
+print(km.res)
+```
+
+```{r}
+km.res$centers
+```
+
+
+Visualizing the clusters
+```{r}
+fviz_cluster(km.res, data = df_scaled,
+             palette = c("#2E9FDF", "#00AFBB", "#ed0000"), 
+             geom = "point",
+             ellipse.type = "convex"
+             )+scale_colour_manual(values = c("darkblue", "darkgreen", "red"))
+
+pc<-princomp(df_scaled)
+plot3d(pc$scores[,1:3],col = km.res$cluster,size = 20)
+```
+
+
+### cluster summarising
+
+Attaching clusters to each observation accordingly
+```{r}
+df_forClustering<-cbind(df_forClustering,cluster=km.res$cluster)
+```
+
+```{r}
+setDT(df_forClustering,keep.rownames = "Site")
+head(df_forClustering)
+```
+
+```{r}
+df_forClustering %>%
+  select(everything()) %>%
+  filter(cluster==1) 
+```
+
+```{r}
+mean_clusters<-df_forClustering %>%
+  select(-Site) %>%
+  group_by(cluster) %>%
+  summarise_all("mean")
+
+write.csv(mean_clusters,"meanclusters.csv", row.names = FALSE)
+```
+
+```{r}
+df_forClustering %>%
+  select(Site,cluster) %>%
+  group_by(cluster)
+```
+
+```{r}
+mean_clusters
+```
+
